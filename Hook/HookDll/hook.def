@@ -1,0 +1,8 @@
+LIBRARY HookDll
+
+EXPORTS
+	setHook
+
+SECTIONS
+	gDwThreadId
+	gHHook

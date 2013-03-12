@@ -3,6 +3,9 @@
 #include "stdafx.h"
 #include <WindowsX.h>
 #include <stdio.h>
+#include <iostream>
+
+using namespace std;
 
 #define HOOKAPI  __declspec(dllexport)
 #include "HookDll.h"
@@ -13,6 +16,11 @@ LRESULT WINAPI getMsgProc(int nCode, WPARAM wParam, LPARAM lParam);
 DWORD gDwThreadId = 0;
 HHOOK gHHook = NULL;
 HWND gHandle = NULL;
+RECT gRect;
+POINT gOffset;
+int gNumX = 9;
+int gNumY = 9;
+int gLength = 16;
 #pragma data_seg()
 
 #pragma comment(linker, "/section:Shared,rws")
@@ -37,30 +45,74 @@ BOOL APIENTRY DllMain( HMODULE hModule,
 	return TRUE;
 }
 
+LPARAM clickBlock(int x,int y)
+{
+//	GetWindowRect(gHandle,&gRect);
+	int xpos = gOffset.x + 16*x;
+	int ypos = gOffset.y + 16*y;
+	return MAKELONG(xpos,ypos);
+}
 
 BOOL WINAPI setHook()
 {
 	BOOL result = FALSE;
-
+	gOffset.x = 15-3;
+	gOffset.y = 104-48;
 
 	assert(gHHook==NULL);
 
-	 gHandle = FindWindow(TEXT("CalcFrame"),NULL);
+	 gHandle = FindWindow(TEXT("扫雷"),NULL);
+	 GetWindowRect(gHandle,&gRect);
 	//get the target thread id
 	DWORD dwThreadId = GetWindowThreadProcessId(gHandle,NULL);
 
 	//get my hook program's thread id for message transfer
 	gDwThreadId = GetCurrentThreadId();
-	gHHook = SetWindowsHookEx(WH_KEYBOARD,getMsgProc,gHinstDll,dwThreadId);
+//	gHHook = SetWindowsHookEx(WH_KEYBOARD,getMsgProc,gHinstDll,dwThreadId);
 
 	result = (gHHook!=NULL);
-	if (result)
+//	if (result)
 	{
 		// post a message so that the hook function gets called
+		//修改窗口标题
 		LPCWSTR msg = TEXT("qq2015");
-
 		result = SendMessage(gHandle,WM_SETTEXT,0,(LPARAM)msg);
-		
+		if(!GetLastError())
+			return false;
+		//发送鼠标消息
+//		lParam = MAKELONG((gRect.left+gRect.right)/2,(gRect.top+gRect.bottom)/2);
+		int x=0,y=0;
+		HDC hDc = ::GetDC(NULL);
+		while(1)
+		{
+			scanf("%d %d",&x,&y);
+			if (x < 0 || x > 8 || y < 0 || y > 8)
+			{
+				::ReleaseDC(NULL, hDc);
+				return false;
+			}
+			LPARAM lParam = clickBlock(x,y);
+			result = SendMessage(gHandle,WM_LBUTTONDOWN,MK_LBUTTON,lParam);
+			if(!GetLastError())
+				return false;
+			result = SendMessage(gHandle,WM_LBUTTONUP,0,lParam);
+			if(!GetLastError())
+				return false;
+
+			
+			int screenX=0,screenY=0;
+			screenX = gOffset.x + 16*x + gRect.left + 3 + 8;
+			screenY = gOffset.y + 16*y + gRect.top + 48 + 8;
+			POINT pt;
+			GetCursorPos(&pt);
+			COLORREF clr = ::GetPixel(hDc,pt.x,pt.y);
+			clr = ::GetPixel(hDc,screenX,screenY);
+			char outString[100] = {0};
+			sprintf(outString,"红：%d\n绿：%d\n蓝：%d",GetRValue(clr),GetGValue(clr),GetBValue(clr));
+			cout << outString << endl;
+			
+		}
+
 	}
 
 	return result;
@@ -68,8 +120,8 @@ BOOL WINAPI setHook()
 
 void unsetHook()
 {
-	assert(gHHook!=NULL);
-	UnhookWindowsHookEx(gHHook);
+//	assert(gHHook!=NULL);
+//	UnhookWindowsHookEx(gHHook);
 	gHHook = NULL;
 }
 

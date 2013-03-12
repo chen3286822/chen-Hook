@@ -18,14 +18,16 @@ HHOOK gHHook = NULL;
 HWND gHandle = NULL;
 RECT gRect;
 POINT gOffset;
-int gNumX = 9;
-int gNumY = 9;
-int gLength = 16;
+const int gNumX = 9;
+const int gNumY = 9;
+const int gLength = 16;
 #pragma data_seg()
 
 #pragma comment(linker, "/section:Shared,rws")
 
 HINSTANCE gHinstDll = NULL;
+
+BYTE gBlock[gNumX*gNumY]={10};
 
 BOOL APIENTRY DllMain( HMODULE hModule,
 	DWORD  ul_reason_for_call,
@@ -45,12 +47,63 @@ BOOL APIENTRY DllMain( HMODULE hModule,
 	return TRUE;
 }
 
-LPARAM clickBlock(int x,int y)
+bool clickBlock(int x,int y)
 {
 //	GetWindowRect(gHandle,&gRect);
 	int xpos = gOffset.x + 16*x;
 	int ypos = gOffset.y + 16*y;
-	return MAKELONG(xpos,ypos);
+	LPARAM lParam = MAKELONG(xpos,ypos);
+	SendMessage(gHandle,WM_LBUTTONDOWN,MK_LBUTTON,lParam);
+	if(GetLastError())
+		return false;
+	SendMessage(gHandle,WM_LBUTTONUP,0,lParam);
+	if(GetLastError())
+		return false;
+	return true;
+}
+
+void updateMap(HDC hDc)
+{
+	COLORREF clr;
+	int oriX = gOffset.x + gRect.left + 3 + 8;
+	int oriY = gOffset.y + gRect.top + 48 + 8;
+	int screenX = 0,screenY = 0;
+	for (int i=0;i<gNumX;i++)
+	{
+		for (int j=0;j<gNumY;j++)
+		{
+			screenX = oriX + gLength*i;
+			screenY = oriY + gLength*j;
+			clr = ::GetPixel(hDc,screenX,screenY);
+			switch(clr)
+			{
+			case 0x0000FF:
+				gBlock[i*gNumY+j] = 1;
+			case 0x008000:
+				gBlock[i*gNumY+j] = 2;
+			case 0xFF0000:
+				gBlock[i*gNumY+j] = 3;
+			case 0x000080:
+				gBlock[i*gNumY+j] = 4;
+			case 0x800000:
+				gBlock[i*gNumY+j] = 5;
+			case 0x008080:
+				gBlock[i*gNumY+j] = 6;
+			case 0x000000:
+				gBlock[i*gNumY+j] = 7;
+			case 0x808080:
+				gBlock[i*gNumY+j] = 8;
+			case 0xC0C0C0:		//未点开或者是空白
+				{
+					clr = ::GetPixel(hDc,screenX-7,screenY-7);
+					if(clr==0xFFFFFF)
+						gBlock[i*gNumY+j] = -1;
+					else
+						gBlock[i*gNumY+j] = 0;
+				}
+			}
+		}
+	}
 }
 
 BOOL WINAPI setHook()
@@ -77,8 +130,9 @@ BOOL WINAPI setHook()
 		//修改窗口标题
 		LPCWSTR msg = TEXT("qq2015");
 		result = SendMessage(gHandle,WM_SETTEXT,0,(LPARAM)msg);
-		if(!GetLastError())
-			return false;
+		DWORD error = GetLastError();
+		if(error)
+			return FALSE;
 		//发送鼠标消息
 //		lParam = MAKELONG((gRect.left+gRect.right)/2,(gRect.top+gRect.bottom)/2);
 		int x=0,y=0;
@@ -89,28 +143,27 @@ BOOL WINAPI setHook()
 			if (x < 0 || x > 8 || y < 0 || y > 8)
 			{
 				::ReleaseDC(NULL, hDc);
-				return false;
+				return FALSE;
 			}
-			LPARAM lParam = clickBlock(x,y);
-			result = SendMessage(gHandle,WM_LBUTTONDOWN,MK_LBUTTON,lParam);
-			if(!GetLastError())
-				return false;
-			result = SendMessage(gHandle,WM_LBUTTONUP,0,lParam);
-			if(!GetLastError())
-				return false;
-
-			
-			int screenX=0,screenY=0;
-			screenX = gOffset.x + 16*x + gRect.left + 3 + 8;
-			screenY = gOffset.y + 16*y + gRect.top + 48 + 8;
-			POINT pt;
-			GetCursorPos(&pt);
-			COLORREF clr = ::GetPixel(hDc,pt.x,pt.y);
-			clr = ::GetPixel(hDc,screenX,screenY);
 			char outString[100] = {0};
+			COLORREF clr;
+			int screenX=0,screenY=0;
+			screenX -= 7;
+			screenY -= 7;
+			clr = ::GetPixel(hDc,screenX,screenY);
 			sprintf(outString,"红：%d\n绿：%d\n蓝：%d",GetRValue(clr),GetGValue(clr),GetBValue(clr));
 			cout << outString << endl;
+
+			if(!clickBlock(x,y))
+				return FALSE;
+			updateMap(hDc);
 			
+// 			screenX = gOffset.x + 16*x + gRect.left + 3 + 8;
+// 			screenY = gOffset.y + 16*y + gRect.top + 48 + 8;
+// 			clr = ::GetPixel(hDc,screenX,screenY);
+// 			
+// 			sprintf(outString,"红：%d\n绿：%d\n蓝：%d",GetRValue(clr),GetGValue(clr),GetBValue(clr));
+// 			cout << outString << endl;
 		}
 
 	}

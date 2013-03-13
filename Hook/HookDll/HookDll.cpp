@@ -4,6 +4,7 @@
 #include <WindowsX.h>
 #include <stdio.h>
 #include <iostream>
+#include <strsafe.h>
 
 using namespace std;
 
@@ -11,6 +12,7 @@ using namespace std;
 #include "HookDll.h"
 
 LRESULT WINAPI getMsgProc(int nCode, WPARAM wParam, LPARAM lParam);
+void ErrorExit(LPTSTR lpszFunction) ;
 
 #pragma data_seg("Shared")
 DWORD gDwThreadId = 0;
@@ -27,7 +29,7 @@ const int gLength = 16;
 
 HINSTANCE gHinstDll = NULL;
 
-BYTE gBlock[gNumX*gNumY]={10};
+int gBlock[gNumX*gNumY];
 
 BOOL APIENTRY DllMain( HMODULE hModule,
 	DWORD  ul_reason_for_call,
@@ -54,11 +56,11 @@ bool clickBlock(int x,int y)
 	int ypos = gOffset.y + 16*y;
 	LPARAM lParam = MAKELONG(xpos,ypos);
 	SendMessage(gHandle,WM_LBUTTONDOWN,MK_LBUTTON,lParam);
-	if(GetLastError())
-		return false;
+//	if(GetLastError())
+//		ErrorExit(TEXT("SendMessage"));
 	SendMessage(gHandle,WM_LBUTTONUP,0,lParam);
-	if(GetLastError())
-		return false;
+//	if(GetLastError())
+//		ErrorExit(TEXT("SendMessage"));
 	return true;
 }
 
@@ -72,27 +74,42 @@ void updateMap(HDC hDc)
 	{
 		for (int j=0;j<gNumY;j++)
 		{
+			if(gBlock[i*gNumY+j] != -1)
+				continue;
 			screenX = oriX + gLength*i;
 			screenY = oriY + gLength*j;
 			clr = ::GetPixel(hDc,screenX,screenY);
 			switch(clr)
 			{
-			case 0x0000FF:
+			case 0xff0000:
 				gBlock[i*gNumY+j] = 1;
+				break;
 			case 0x008000:
 				gBlock[i*gNumY+j] = 2;
-			case 0xFF0000:
+				break;
+			case 0x0000ff:
 				gBlock[i*gNumY+j] = 3;
-			case 0x000080:
-				gBlock[i*gNumY+j] = 4;
 			case 0x800000:
+				gBlock[i*gNumY+j] = 4;
+				break;
+			case 0x000080:
 				gBlock[i*gNumY+j] = 5;
-			case 0x008080:
+				break;
+			case 0x808000:
 				gBlock[i*gNumY+j] = 6;
+				break;
 			case 0x000000:
-				gBlock[i*gNumY+j] = 7;
+				{
+					clr = ::GetPixel(hDc,screenX,screenY-2);
+					if(clr==0x0000ff)
+						gBlock[i*gNumY+j] = -2;	//∫Ï∆Ï
+					else
+						gBlock[i*gNumY+j] = 7;
+				}
+				break;
 			case 0x808080:
 				gBlock[i*gNumY+j] = 8;
+				break;
 			case 0xC0C0C0:		//Œ¥µ„ø™ªÚ’ﬂ «ø’∞◊
 				{
 					clr = ::GetPixel(hDc,screenX-7,screenY-7);
@@ -101,8 +118,51 @@ void updateMap(HDC hDc)
 					else
 						gBlock[i*gNumY+j] = 0;
 				}
+				break;
 			}
 		}
+	}
+}
+
+bool checkFirst()
+{
+
+	return true;
+}
+
+
+void sweepMine()
+{
+	memset(gBlock,-1,gNumX*gNumY);
+	int x=0,y=0;
+	HDC hDc = ::GetDC(NULL);
+	while(1)
+	{
+		scanf("%d %d",&x,&y);
+		if (x < 0 || x > 8 || y < 0 || y > 8)
+		{
+			::ReleaseDC(NULL, hDc);
+			return;
+		}
+// 		char outString[100] = {0};
+// 		COLORREF clr;
+// 		int screenX=0,screenY=0;
+// 		screenX -= 7;
+// 		screenY -= 7;
+// 		clr = ::GetPixel(hDc,screenX,screenY);
+// 		sprintf(outString,"∫Ï£∫%d\n¬Ã£∫%d\n¿∂£∫%d",GetRValue(clr),GetGValue(clr),GetBValue(clr));
+// 		cout << outString << endl;
+
+		if(!clickBlock(x,y))
+			return;
+		updateMap(hDc);
+
+		// 			screenX = gOffset.x + 16*x + gRect.left + 3 + 8;
+		// 			screenY = gOffset.y + 16*y + gRect.top + 48 + 8;
+		// 			clr = ::GetPixel(hDc,screenX,screenY);
+		// 			
+		// 			sprintf(outString,"∫Ï£∫%d\n¬Ã£∫%d\n¿∂£∫%d",GetRValue(clr),GetGValue(clr),GetBValue(clr));
+		// 			cout << outString << endl;
 	}
 }
 
@@ -128,44 +188,13 @@ BOOL WINAPI setHook()
 	{
 		// post a message so that the hook function gets called
 		//–ﬁ∏ƒ¥∞ø⁄±ÍÃ‚
-		LPCWSTR msg = TEXT("qq2015");
-		result = SendMessage(gHandle,WM_SETTEXT,0,(LPARAM)msg);
-		DWORD error = GetLastError();
-		if(error)
-			return FALSE;
+//		LPCWSTR msg = TEXT("qq2015");
+//		result = SendMessage(gHandle,WM_SETTEXT,0,(LPARAM)msg);
+//		ErrorExit(TEXT("SendMessage"));
 		//∑¢ÀÕ Û±Íœ˚œ¢
 //		lParam = MAKELONG((gRect.left+gRect.right)/2,(gRect.top+gRect.bottom)/2);
-		int x=0,y=0;
-		HDC hDc = ::GetDC(NULL);
-		while(1)
-		{
-			scanf("%d %d",&x,&y);
-			if (x < 0 || x > 8 || y < 0 || y > 8)
-			{
-				::ReleaseDC(NULL, hDc);
-				return FALSE;
-			}
-			char outString[100] = {0};
-			COLORREF clr;
-			int screenX=0,screenY=0;
-			screenX -= 7;
-			screenY -= 7;
-			clr = ::GetPixel(hDc,screenX,screenY);
-			sprintf(outString,"∫Ï£∫%d\n¬Ã£∫%d\n¿∂£∫%d",GetRValue(clr),GetGValue(clr),GetBValue(clr));
-			cout << outString << endl;
-
-			if(!clickBlock(x,y))
-				return FALSE;
-			updateMap(hDc);
-			
-// 			screenX = gOffset.x + 16*x + gRect.left + 3 + 8;
-// 			screenY = gOffset.y + 16*y + gRect.top + 48 + 8;
-// 			clr = ::GetPixel(hDc,screenX,screenY);
-// 			
-// 			sprintf(outString,"∫Ï£∫%d\n¬Ã£∫%d\n¿∂£∫%d",GetRValue(clr),GetGValue(clr),GetBValue(clr));
-// 			cout << outString << endl;
-		}
-
+		
+		sweepMine();
 	}
 
 	return result;
@@ -228,4 +257,38 @@ LRESULT CALLBACK getMsgProc(int nCode, WPARAM wParam, LPARAM lParam)
 
 
 	return CallNextHookEx(gHHook,nCode,wParam,lParam);
+}
+
+
+void ErrorExit(LPTSTR lpszFunction) 
+{ 
+	// Retrieve the system error message for the last-error code
+
+	LPVOID lpMsgBuf;
+	LPVOID lpDisplayBuf;
+	DWORD dw = GetLastError(); 
+
+	FormatMessage(
+		FORMAT_MESSAGE_ALLOCATE_BUFFER | 
+		FORMAT_MESSAGE_FROM_SYSTEM |
+		FORMAT_MESSAGE_IGNORE_INSERTS,
+		NULL,
+		dw,
+		MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
+		(LPTSTR) &lpMsgBuf,
+		0, NULL );
+
+	// Display the error message and exit the process
+
+	lpDisplayBuf = (LPVOID)LocalAlloc(LMEM_ZEROINIT, 
+		(lstrlen((LPCTSTR)lpMsgBuf) + lstrlen((LPCTSTR)lpszFunction) + 40) * sizeof(TCHAR)); 
+	StringCchPrintf((LPTSTR)lpDisplayBuf, 
+		LocalSize(lpDisplayBuf) / sizeof(TCHAR),
+		TEXT("%s failed with error %d: %s"), 
+		lpszFunction, dw, lpMsgBuf); 
+	MessageBox(NULL, (LPCTSTR)lpDisplayBuf, TEXT("Error"), MB_OK); 
+
+	LocalFree(lpMsgBuf);
+	LocalFree(lpDisplayBuf);
+	ExitProcess(dw); 
 }

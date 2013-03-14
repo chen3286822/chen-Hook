@@ -19,7 +19,7 @@ using namespace std;
 
 LRESULT WINAPI getMsgProc(int nCode, WPARAM wParam, LPARAM lParam);
 void ErrorExit(LPTSTR lpszFunction);
-COLORREF* gethash(HDC hDc, int x1, int y1, int x2, int y2);
+void gethash(HDC hDc, int x1, int y1, int x2, int y2,DWORD** clr);
 
 #pragma data_seg("Shared")
 DWORD gDwThreadId = 0;
@@ -27,7 +27,8 @@ HHOOK gHHook = NULL;
 HWND gHandle = NULL;
 RECT gRect;
 POINT gOffset;
-const int gNumX = 16;
+POINT gTitleOffset;
+const int gNumX =16;
 const int gNumY = 16;
 const int gLength = 16;
 #pragma data_seg()
@@ -37,6 +38,9 @@ const int gLength = 16;
 HINSTANCE gHinstDll = NULL;
 
 int gBlock[gNumX*gNumY];
+HDC gHdcComp;
+HGDIOBJ gHobjOrig;
+HBITMAP gHbmp;
 
 struct Block
 {
@@ -70,8 +74,8 @@ BOOL APIENTRY DllMain( HMODULE hModule,
 bool leftClickBlock(int x,int y)
 {
 //	GetWindowRect(gHandle,&gRect);
-	int xpos = gOffset.x + 16*x;
-	int ypos = gOffset.y + 16*y;
+	int xpos = gOffset.x + 16*x - gTitleOffset.x + 8;
+	int ypos = gOffset.y + 16*y - gTitleOffset.y + 8;
 	LPARAM lParam = MAKELONG(xpos,ypos);
 	SendMessage(gHandle,WM_LBUTTONDOWN,MK_LBUTTON,lParam);
 //	if(GetLastError())
@@ -84,19 +88,19 @@ bool leftClickBlock(int x,int y)
 
 bool rightClickBlock(int x,int y)
 {
-
-	int xpos = gOffset.x + 16*x;
-	int ypos = gOffset.y + 16*y;
+	int xpos = gOffset.x + 16*x - gTitleOffset.x + 8;
+	int ypos = gOffset.y + 16*y - gTitleOffset.y + 8;
 	LPARAM lParam = MAKELONG(xpos,ypos);
 	SendMessage(gHandle,WM_RBUTTONDOWN,MK_RBUTTON,lParam);
 	SendMessage(gHandle,WM_RBUTTONUP,0,lParam);
+	gBlock[x*gNumY+y] = -2;
 	return true;
 }
 
 bool doubleClickBlock(int x,int y)
 {
-	int xpos = gOffset.x + 16*x;
-	int ypos = gOffset.y + 16*y;
+	int xpos = gOffset.x + 16*x - gTitleOffset.x + 8;
+	int ypos = gOffset.y + 16*y - gTitleOffset.y + 8;
 	LPARAM lParam = MAKELONG(xpos,ypos);
 	SendMessage(gHandle,WM_LBUTTONDOWN,MK_LBUTTON,lParam);
 	SendMessage(gHandle,WM_RBUTTONDOWN,MK_LBUTTON|MK_RBUTTON,lParam);
@@ -118,10 +122,8 @@ void updateMap(HDC hDc)
 	oriY = gOffset.y + gRect.top;
 #endif
 #endif
-	COLORREF* clr = gethash(hDc, oriX, oriY, oriX+gNumX*gLength, oriY+gNumY*gLength);
-//	clr[1+1] = clr[2+2];
-	/*
-	COLORREF clr;
+	DWORD* clr = NULL;
+	gethash(hDc, oriX, oriY, oriX+gNumX*gLength-1, oriY+gNumY*gLength-1,&clr);
 
 	int screenX = 0,screenY = 0;
 	for (int i=0;i<gNumX;i++)
@@ -130,44 +132,38 @@ void updateMap(HDC hDc)
 		{
 			if(gBlock[i*gNumY+j] != -1)
 				continue;
-			screenX = oriX + gLength*i;
-			screenY = oriY + gLength*j;
-			clr = ::GetPixel(hDc,screenX,screenY);
-			switch(clr)
+			switch(clr[((gNumY-j-1)*gLength+8)*gNumX*gLength+i*gLength+8])
 			{
-			case 0xff0000:
+			case 0xFF0000FF:
 				gBlock[i*gNumY+j] = 1;
 				break;
-			case 0x008000:
+			case 0xFF008000:
 				gBlock[i*gNumY+j] = 2;
 				break;
-			case 0x0000ff:
-				gBlock[i*gNumY+j] = 3;
-			case 0x800000:
+			case 0xFFFF0000:
+				if(clr[((gNumY-j-1)*gLength+6)*gNumX*gLength+i*gLength+8]==0xFF000000)
+					gBlock[i*gNumY+j] = -2;	//红旗
+				else
+					gBlock[i*gNumY+j] = 3;
+				break;
+			case 0xFF000080:
 				gBlock[i*gNumY+j] = 4;
 				break;
-			case 0x000080:
+			case 0xFF800000:
 				gBlock[i*gNumY+j] = 5;
 				break;
-			case 0x808000:
+			case 0xFF008080:
 				gBlock[i*gNumY+j] = 6;
 				break;
-			case 0x000000:
-				{
-					clr = ::GetPixel(hDc,screenX,screenY-2);
-					if(clr==0x0000ff)
-						gBlock[i*gNumY+j] = -2;	//红旗
-					else
-						gBlock[i*gNumY+j] = 7;
-				}
+			case 0xFF000000:
+				gBlock[i*gNumY+j] = 7;
 				break;
-			case 0x808080:
+			case 0xFF808080:
 				gBlock[i*gNumY+j] = 8;
 				break;
-			case 0xC0C0C0:		//未点开或者是空白
+			case 0xFFC0C0C0:		//未点开或者是空白
 				{
-					clr = ::GetPixel(hDc,screenX-7,screenY-7);
-					if(clr==0xFFFFFF)
+					if(clr[((gNumY-j-1)*gLength+15)*gNumX*gLength+i*gLength]==0xFFFFFFFF)
 						gBlock[i*gNumY+j] = -1;
 					else
 						gBlock[i*gNumY+j] = 0;
@@ -175,7 +171,10 @@ void updateMap(HDC hDc)
 				break;
 			}
 		}
-	}*/
+	}
+	SelectObject(gHdcComp, gHobjOrig);
+	DeleteObject(gHbmp);
+	DeleteDC(gHdcComp);
 }
 
 //检测点point周围8个格子的状况，保存在vector中，返回该点周围的剩余雷数
@@ -201,7 +200,7 @@ int searchAround(Block point,int num,vector<Block>& unOpen,vector<Block>& flag)
 				unOpen.push_back(Block(point.x-1,point.y-1));
 		}
 
-		if (point.y+1<=8)
+		if (point.y+1<gNumY)
 		{
 			//左下点
 			index = (point.x-1)*gNumY+point.y+1;
@@ -211,7 +210,7 @@ int searchAround(Block point,int num,vector<Block>& unOpen,vector<Block>& flag)
 				unOpen.push_back(Block(point.x-1,point.y+1));
 		}
 	}
-	if (point.x+1 <= 8)
+	if (point.x+1 < gNumX)
 	{
 		//右边点
 		index = (point.x+1)*gNumY+point.y;
@@ -230,7 +229,7 @@ int searchAround(Block point,int num,vector<Block>& unOpen,vector<Block>& flag)
 				unOpen.push_back(Block(point.x+1,point.y-1));
 		}
 
-		if (point.y+1 <= 8)
+		if (point.y+1 < gNumY)
 		{
 			//右下点
 			index = (point.x+1)*gNumY+point.y+1;
@@ -249,7 +248,7 @@ int searchAround(Block point,int num,vector<Block>& unOpen,vector<Block>& flag)
 		else if(gBlock[index] == -1)
 			unOpen.push_back(Block(point.x,point.y-1));
 	}
-	if (point.y+1<=8)
+	if (point.y+1<gNumY)
 	{
 		//下点
 		index = point.x*gNumY+point.y+1;
@@ -259,6 +258,95 @@ int searchAround(Block point,int num,vector<Block>& unOpen,vector<Block>& flag)
 			unOpen.push_back(Block(point.x,point.y+1));
 	}
 	return (num-flag.size());
+}
+
+
+//此时有一种特殊情况可以继续扫雷，如下
+// 2		1		2		|>
+//	|>	2		4		|>
+//	口	口	口	|>
+//类似以上的情况，4是判断点，剩余1雷，但是有2个格子未翻开
+//这两个格子相连，则对4的邻居同样接触这两个格子的点，也就是2进行判断
+//如果此格子剩余雷数为1，且有其他未点开的格子，那么点击其他格子
+//如果此格子剩余雷数大于1，且除开4的那颗雷外，剩余雷的数量与其他未点开格子数相同，则标记其他格子
+bool checkDeep(Block point,vector<Block> unOpen,int result)
+{
+	//检查unOpen是不是剩余2个
+	if(unOpen.size()!=2)
+		return false;
+	//剩余雷数必须为1个
+	if (result != 1)
+		return false;
+	//2个相连的未点开格子，与源点有8种位置关系，其中一个与源点接触
+	vector<Block> vTarUnOpen;
+	vector<Block> vTarFlag;
+	int tarResult = 0;
+	for (int i=0;i<unOpen.size();i++)
+	{
+		tarResult = 0;
+		vTarFlag.clear();
+		vTarUnOpen.clear();
+		//接触点在左右边
+		if((unOpen[i].x==point.x-1 && unOpen[i].y==point.y) ||
+			(unOpen[i].x==point.x+1 && unOpen[i].y==point.y))
+		{
+			//另一点在侧上
+			if(unOpen[1-i].x==unOpen[i].x &&unOpen[1-i].y==unOpen[i].y-1)
+			{
+				//此时检查源点上方的点
+				tarResult = searchAround(Block(point.x,point.y-1),gBlock[point.x*gNumY+point.y-1],vTarUnOpen,vTarFlag);
+			}
+			//另一点在侧下
+			else  if (unOpen[1-i].x==unOpen[i].x && unOpen[1-i].y==unOpen[i].y+1)
+			{
+				//此时检查源点下方的点
+				tarResult = searchAround(Block(point.x,point.y+1),gBlock[point.x*gNumY+point.y+1],vTarUnOpen,vTarFlag);
+			}
+		}
+		//接触点在上下边
+		else if ((unOpen[i].x==point.x && unOpen[i].y==point.y-1) ||
+			(unOpen[i].x==point.x && unOpen[i].y==point.y+1))
+		{
+			//另一点在侧左
+			if(unOpen[1-i].x==unOpen[i].x-1 &&unOpen[1-i].y==unOpen[i].y)
+			{
+				//此时检查源点左方的点
+				tarResult = searchAround(Block(point.x-1,point.y),gBlock[(point.x-1)*gNumY+point.y],vTarUnOpen,vTarFlag);
+			}
+			//另一点在侧右
+			else  if (unOpen[1-i].x==unOpen[i].x+1 && unOpen[1-i].y==unOpen[i].y)
+			{
+				//此时检查源点右方的点
+				tarResult = searchAround(Block(point.x+1,point.y),gBlock[(point.x+1)*gNumY+point.y],vTarUnOpen,vTarFlag);
+			}
+		}
+		if(tarResult==1 && !vTarUnOpen.empty())
+		{
+			for (int j=0;j<vTarUnOpen.size();j++)
+			{
+				if((vTarUnOpen[j].x!=unOpen[0].x || vTarUnOpen[j].y!=unOpen[0].y) &&
+					(vTarUnOpen[j].x!=unOpen[1].x || vTarUnOpen[j].y!=unOpen[1].y))
+				{
+					leftClickBlock(vTarUnOpen[j].x,vTarUnOpen[j].y);
+					break;
+				}
+			}
+		}
+		else if(tarResult > 1 && (tarResult-1)==(vTarUnOpen.size()-2))
+		{
+			//目标点除开与源点共有的2个未点开格子外，其他都是雷
+			for (int k=0;k<vTarUnOpen.size();k++)
+			{
+				if((vTarUnOpen[k].x!=unOpen[0].x || vTarUnOpen[k].y!=unOpen[0].y) &&
+					(vTarUnOpen[k].x!=unOpen[1].x || vTarUnOpen[k].y!=unOpen[1].y))
+				{
+						rightClickBlock(vTarUnOpen[k].x,vTarUnOpen[k].y);
+						break;
+				}
+			}
+		}
+	}
+	return true;
 }
 
 bool checkFirst(HDC hDc)
@@ -290,19 +378,11 @@ bool checkFirst(HDC hDc)
 						for (int k=0;k<vUnOpen.size();k++)
 						{
 							rightClickBlock(vUnOpen[k].x,vUnOpen[k].y);
-							gBlock[vUnOpen[k].x*gNumY+vUnOpen[k].y] = -2;
 						}
 					}
-
 					//此时未点开的格子数一定大于剩余雷数
-					//此时有一种特殊情况可以继续扫雷，如下
-					// 2		1		2		|>
-					//	|>		2		4		|>
-					//	口	口	口	|>
-					//类似以上的情况，4是判断点，剩余1雷，但是有2个格子未翻开
-					//这两个格子相连，则对4的邻居同样接触这两个格子的点，也就是2进行判断
-					//如果此格子剩余雷数为1，且有其他未点开的格子，那么点击其他格子
-					//如果此格子剩余雷数大于1，且除开4的那颗雷外，剩余雷的数量与其他未点开格子数相同，则标记其他格子
+					else
+						checkDeep(Block(i,j),vUnOpen,result);
 				}
 			}
 		}
@@ -318,12 +398,12 @@ void sweepMine()
 	HDC hDc = ::GetDC(NULL);
 	while(1)
 	{
-		scanf("%d %d",&x,&y);
-		if (x < 0 || x >= gNumX || y < 0 || y >= gNumY)
-		{
-			::ReleaseDC(NULL, hDc);
-			return;
-		}
+// 		scanf("%d %d",&x,&y);
+// 		if (x < 0 || x >= gNumX || y < 0 || y >= gNumY)
+// 		{
+// 			::ReleaseDC(NULL, hDc);
+// 			return;
+// 		}
 // 		char outString[100] = {0};
 // 		COLORREF clr;
 // 		int screenX=0,screenY=0;
@@ -344,6 +424,7 @@ void sweepMine()
 		// 			sprintf(outString,"红：%d\n绿：%d\n蓝：%d",GetRValue(clr),GetGValue(clr),GetBValue(clr));
 		// 			cout << outString << endl;
 	}
+	::ReleaseDC(NULL, hDc);
 }
 
 BOOL WINAPI setHook()
@@ -352,10 +433,14 @@ BOOL WINAPI setHook()
 #ifdef XP
 	gOffset.x = 15-3;
 	gOffset.y = 104-48;
+	gTitleOffset.x = 0;
+	gTitleOffset.y = 0;
 #else
 #ifdef WIN7
-	gOffset.x = 16;
-	gOffset.y = 101;
+	gOffset.x = 15;
+	gOffset.y = 100;
+	gTitleOffset.x = 4;
+	gTitleOffset.y = 46;
 #endif
 #endif
 
@@ -481,7 +566,7 @@ void ErrorExit(LPTSTR lpszFunction)
 	ExitProcess(dw); 
 }
 
-COLORREF * gethash(HDC hDc, int x1, int y1, int x2, int y2)
+void gethash(HDC hDc, int x1, int y1, int x2, int y2,DWORD** buffer)
 {
 //	COLORREF buffer[gNumX*gNumY*gLength*gLength];
 // 	x1 = 100;
@@ -489,20 +574,18 @@ COLORREF * gethash(HDC hDc, int x1, int y1, int x2, int y2)
 // 	x2 = 200;
 // 	y2 = 200;
 //	COLORREF* buffer;
-	BYTE* buffer;
-	HDC hdcComp;
-	HGDIOBJ hobjOrig;
-	HBITMAP hbmp;
+	//BGRA
+
 	int cx, cy;
 	BITMAPINFO bi;
 	int i;
 
 
-	hdcComp = CreateCompatibleDC(hDc);
+	gHdcComp = CreateCompatibleDC(hDc);
 //	ErrorExit(TEXT("CreateCompatibleDC"));
-	if (!hdcComp) {
+	if (!gHdcComp) {
 		::ReleaseDC(NULL,hDc);
-		return NULL;
+		return;
 	}
 
 	cx = x2 - x1 + 1;
@@ -518,57 +601,64 @@ COLORREF * gethash(HDC hDc, int x1, int y1, int x2, int y2)
 	bi.bmiHeader.biClrUsed = 0;
 	bi.bmiHeader.biClrImportant = 0;
 
-	hbmp = CreateDIBSection(hdcComp, &bi, DIB_RGB_COLORS, (void **)&buffer, NULL, 0);
-	if (!hbmp) {
-		DeleteDC(hdcComp);
+	gHbmp = CreateDIBSection(gHdcComp, &bi, DIB_RGB_COLORS, (void **)&(*buffer), NULL, 0);
+	if (!gHbmp) {
+		DeleteDC(gHdcComp);
 		::ReleaseDC(NULL,hDc);
-		return NULL;
+		return;
 	}
 
-	hobjOrig = SelectObject(hdcComp, hbmp);
-	if (!hobjOrig) {
-		DeleteObject(hbmp);
-		DeleteDC(hdcComp);
+	gHobjOrig = SelectObject(gHdcComp, gHbmp);
+	if (!gHobjOrig) {
+		DeleteObject(gHbmp);
+		DeleteDC(gHdcComp);
 		::ReleaseDC(NULL,hDc);
-		return NULL;
+		return;
 	}
 
-	if (!BitBlt(hdcComp, 0, 0, cx, cy, hDc, x1, y1, SRCCOPY)) {
-		SelectObject(hdcComp, hobjOrig);
-		DeleteObject(hbmp);
-		DeleteDC(hdcComp);
+	if (!BitBlt(gHdcComp, 0, 0, cx, cy, hDc, x1, y1, SRCCOPY)) {
+		SelectObject(gHdcComp, gHobjOrig);
+		DeleteObject(gHbmp);
+		DeleteDC(gHdcComp);
 		::ReleaseDC(NULL,hDc);
-		return NULL;
+		return;
 	}
 
-	buffer[0] = 0;		//G
-	buffer[1] = 0;		//B
-	buffer[2] = 0xff;	//R
-	buffer[3] = 0;		//A
+// 	buffer[0] = 0;		//B
+// 	buffer[1] = 0;		//G
+// 	buffer[2] = 0xff;	//R
+// 	buffer[3] = 0;		//A
+// 
+// 	buffer[4] = 0xff;
+// 	buffer[5] = 0;
+// 	buffer[6] = 0;
+// 	buffer[7] = 0;
+// 
+// 	buffer[8] = 0;
+// 	buffer[9] = 0xff;
+// 	buffer[10] = 0;
+// 	buffer[11] = 0;
+// 	buffer[0] = 0xff0000;
+// 	buffer[1] = 0xff;
+// 	buffer[2] = 0xff00;
+// 	int x = 2;
+// 	int y = 3;
+// 	buffer[((gNumY-y-1)*gLength+8)*gNumX*gLength+x*gLength+8] = 0xff0000;
 
-	buffer[4] = 0xff;
-	buffer[5] = 0;
-	buffer[6] = 0;
-	buffer[7] = 0;
 
-	buffer[8] = 0;
-	buffer[9] = 0xff;
-	buffer[10] = 0;
-	buffer[11] = 0;
+// 	buffer[(gNumY-y)*gLength*gNumX*gLength+x*gLength] = 0;
+// 	buffer[(gNumY-y)*gLength*gNumX*gLength+x*gLength+1] = 0;
+// 	buffer[(gNumY-y)*gLength*gNumX*gLength+x*gLength+2] = 0xff;
+// 	buffer[(gNumY-y)*gLength*gNumX*gLength+x*gLength+3] = 0;
 // 	for (i = 0; i <  cy; ++i) {
 // 	 	buffer[i] = 0;
 // 		buffer[i+1] = 0;
 // 		buffer[i+2] = 0xFF;
 // 	}
-	CImage image;
-	image.Attach(hbmp);
-	image.Save(_T("c:\\B.bmp"));
-	image.Detach();
+// 	CImage image;
+// 	image.Attach(hbmp);
+// 	image.Save(_T("c:\\B.bmp"));
+// 	image.Detach();
 
-
-	SelectObject(hdcComp, hobjOrig);
-	DeleteObject(hbmp);
-	DeleteDC(hdcComp);
 //	::ReleaseDC(NULL,hDc);
-	return NULL;
 }

@@ -11,8 +11,8 @@
 
 using namespace std;
 
-#define WIN7
-//#define XP
+//#define WIN7
+#define XP
 
 #define HOOKAPI  __declspec(dllexport)
 #include "HookDll.h"
@@ -114,8 +114,8 @@ void updateMap(HDC hDc)
 	int oriX = 0;
 	int oriY = 0;
 #ifdef XP
-	oriX = gOffset.x + gRect.left + 3;
-	oriY = gOffset.y + gRect.top + 48;
+	oriX = gOffset.x + gRect.left;
+	oriY = gOffset.y + gRect.top;
 #else
 #ifdef WIN7
 	oriX = gOffset.x + gRect.left;
@@ -132,7 +132,7 @@ void updateMap(HDC hDc)
 		{
 			if(gBlock[i*gNumY+j] != -1)
 				continue;
-			switch(clr[((gNumY-j-1)*gLength+8)*gNumX*gLength+i*gLength+8])
+			switch(clr[((gNumY-j-1)*gLength+8)*gNumX*gLength+i*gLength+8] | 0xFF000000)
 			{
 			case 0xFF0000FF:
 				gBlock[i*gNumY+j] = 1;
@@ -141,7 +141,7 @@ void updateMap(HDC hDc)
 				gBlock[i*gNumY+j] = 2;
 				break;
 			case 0xFFFF0000:
-				if(clr[((gNumY-j-1)*gLength+6)*gNumX*gLength+i*gLength+8]==0xFF000000)
+				if((clr[((gNumY-j-1)*gLength+6)*gNumX*gLength+i*gLength+8] | 0xFF000000)==0xFF000000)
 					gBlock[i*gNumY+j] = -2;	//红旗
 				else
 					gBlock[i*gNumY+j] = 3;
@@ -163,7 +163,7 @@ void updateMap(HDC hDc)
 				break;
 			case 0xFFC0C0C0:		//未点开或者是空白
 				{
-					if(clr[((gNumY-j-1)*gLength+15)*gNumX*gLength+i*gLength]==0xFFFFFFFF)
+					if((clr[((gNumY-j-1)*gLength+15)*gNumX*gLength+i*gLength] | 0xFF000000)==0xFFFFFFFF)
 						gBlock[i*gNumY+j] = -1;
 					else
 						gBlock[i*gNumY+j] = 0;
@@ -431,10 +431,10 @@ BOOL WINAPI setHook()
 {
 	BOOL result = FALSE;
 #ifdef XP
-	gOffset.x = 15-3;
-	gOffset.y = 104-48;
-	gTitleOffset.x = 0;
-	gTitleOffset.y = 0;
+	gOffset.x = 15;
+	gOffset.y = 104;
+	gTitleOffset.x = 3;
+	gTitleOffset.y = 48;
 #else
 #ifdef WIN7
 	gOffset.x = 15;
@@ -656,7 +656,7 @@ void gethash(HDC hDc, int x1, int y1, int x2, int y2,DWORD** buffer)
 // 		buffer[i+2] = 0xFF;
 // 	}
 // 	CImage image;
-// 	image.Attach(hbmp);
+// 	image.Attach(gHbmp);
 // 	image.Save(_T("c:\\B.bmp"));
 // 	image.Detach();
 

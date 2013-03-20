@@ -29,7 +29,7 @@ RECT gRect;
 POINT gOffset;
 POINT gTitleOffset;
 const int gNumX =16;
-const int gNumY = 16;
+const int gNumY = 30;
 const int gLength = 16;
 #pragma data_seg()
 
@@ -578,7 +578,6 @@ void gethash(HDC hDc, int x1, int y1, int x2, int y2,DWORD** buffer)
 
 	int cx, cy;
 	BITMAPINFO bi;
-	int i;
 
 
 	gHdcComp = CreateCompatibleDC(hDc);

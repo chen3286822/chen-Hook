@@ -11,8 +11,8 @@
 
 using namespace std;
 
-//#define WIN7
-#define XP
+#define WIN7
+//#define XP
 
 #define HOOKAPI  __declspec(dllexport)
 #include "HookDll.h"
